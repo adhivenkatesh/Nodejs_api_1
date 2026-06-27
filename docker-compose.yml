@@ -1,0 +1,44 @@
+#version: '3.8'
+
+services:
+  # 1. YOUR FASTAPI WEB APPLICATION CONTAINER
+  api-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: python-cloud-api
+    ports:
+      - "7000:7000"
+    environment:
+      # Switch this parameter to toggle your target environment:
+      # Options: 'local-aws' or 'local-azure'
+      - CLOUD_PROVIDER=local-aws
+      
+      # Database Connection Strings (Routes internal traffic to sister containers)
+      - DB_HOST=database-router
+      - DB_USER=sa
+      - DB_PASSWORD=YourStrong@Pass123
+      - DB_NAME=db_employee
+    depends_on:
+      - database-router
+      - floci-cloud-emulator
+
+  # 2. LOCAL DATA STORAGE AND EMULATION FABRIC
+  floci-cloud-emulator:
+    image: floci/floci:latest  # Swap to floci/floci-az:latest when testing Azure Storage
+    container_name: floci-framework
+    ports:
+      - "4566:4566"            # AWS local emulation port
+      - "4577:4577"            # Azure local emulation port
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  # 3. UNIFIED CROSS-PLATFORM DATABASE CONTROLLER
+  database-router:
+    image: ://microsoft.com
+    container_name: local-cloud-db
+    ports:
+      - "1433:1433"
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=YourStrong@Pass123

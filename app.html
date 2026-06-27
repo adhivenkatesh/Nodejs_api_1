@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employee Management System</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 30px; background-color: #f4f7f6; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 1fr 2.5fr; gap: 30px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); height: fit-content; }
+        h2 { margin-top: 0; color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px; }
+        input, select { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { background-color: #2ecc71; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
+        button:hover { background-color: #27ae60; }
+        
+        .search-wrapper { margin-bottom: 15px; }
+        #searchBar { padding: 10px; border: 2px solid #34495e; border-radius: 4px; font-size: 14px; }
+
+        /* SCROLLABLE TABLE WINDOW CONTAINMENT */
+        .table-scroll-container {
+            max-height: 450px; 
+            overflow-y: auto;   
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        table { width: 100%; border-collapse: collapse; background: white; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; font-size: 14px; }
+        th { background-color: #34495e; color: white; position: sticky; top: 0; z-index: 1; }
+        tr:hover { background-color: #f1f2f6; }
+        .btn-delete { background-color: #e74c3c; padding: 5px 10px; width: auto; font-size: 12px; display: inline-block; }
+        .btn-delete:hover { background-color: #c0392b; }
+        .btn-edit { background-color: #3498db; width: auto; font-size: 12px; padding: 5px 10px; margin-right: 5px; display: inline-block; }
+        .btn-edit:hover { background-color: #2980b9; }
+    </style>
+</head>
+<body>
+
+    <h1 style="text-align: center; color: #2c3e50; margin-bottom: 30px;">Employee Database Directory</h1>
+
+    <div class="container">
+        <!-- FORM INTERFACE CARD -->
+        <div class="card">
+            <h2>Add Employee</h2>
+            <form id="empForm">
+                <div class="form-group"><label>Emp Code</label><input type="text" id="empcode" required></div>
+                <div class="form-group"><label>Name</label><input type="text" id="empname" required></div>
+                <div class="form-group"><label>Address</label><input type="text" id="empaddress" required></div>
+                <div class="form-group"><label>Zip Code</label><input type="text" id="empzipcode" required></div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="empstatus">
+                        <option value="ACTIVE">ACTIVE</option>
+                        <option value="INACTIVE">INACTIVE</option>
+                    </select>
+                </div>
+                <button type="submit" id="submitBtn">Save Record</button>
+            </form>
+        </div>
+
+        <!-- SCROLLABLE LIST TABLE CARD -->
+        <div class="card">
+            <h2>Employee List</h2>
+            
+            <div class="search-wrapper">
+                <input type="text" id="searchBar" placeholder="🔍 Type to search employees by name, code, or status...">
+            </div>
+
+            <div class="table-scroll-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Name</th>
+                            <th>Address</th>
+                            <th>Zip</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="employeeTableBody">
+                        <!-- Populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://localhost:7000/employees";
+
+        //const API_URL = "/employees";
+        let isEditMode = false;
+
+        // --- 1. READ: Fetch Data Rows ---
+        function loadEmployees() {
+            fetch(API_URL)
+                .then(res => res.json())
+                .then(data => {
+                    const tbody = document.getElementById("employeeTableBody");
+                    tbody.innerHTML = "";
+                    
+                    data.forEach(emp => {
+                        const tr = document.createElement("tr");
+                        tr.className = "employee-row";
+                        tr.innerHTML = `
+                            <td>${emp.empcode}</td>
+                            <td><b>${emp.empname}</b></td>
+                            <td>${emp.empaddress}</td>
+                            <td>${emp.empzipcode}</td>
+                            <td>${emp.empstatus}</td>
+                            <td>
+                                <button class="btn-edit">Edit</button>
+                                <button class="btn-delete">Delete</button>
+                            </td>
+                        `;
+                        
+                        // Attach data objects safely to the elements to avoid quote breaking bugs
+                        tr.querySelector(".btn-edit").addEventListener("click", () => populateFormForEdit(emp));
+                        tr.querySelector(".btn-delete").addEventListener("click", () => deleteEmployee(emp.empcode));
+                        
+                        tbody.appendChild(tr);
+                    });
+                })
+                .catch(err => console.error("Error reading data:", err));
+        }
+
+        // --- 2. LIVE SEARCH FILTER SYSTEM ---
+        document.getElementById("searchBar").addEventListener("keyup", function() {
+            const keyword = this.value.toLowerCase();
+            const rows = document.querySelectorAll(".employee-row");
+            
+            rows.forEach(row => {
+                const textContent = row.textContent.toLowerCase();
+                if (textContent.includes(keyword)) {
+                    row.style.display = ""; // Shows matching row
+                } else {
+                    row.style.display = "none"; // Hides non-matching row
+                }
+            });
+        });
+
+        // --- 3. POPULATE FORM FOR EDIT ---
+        function populateFormForEdit(emp) {
+            isEditMode = true;
+            
+            document.getElementById("empcode").value = emp.empcode;
+            document.getElementById("empcode").disabled = true;
+            document.getElementById("empname").value = emp.empname;
+            document.getElementById("empaddress").value = emp.empaddress;
+            document.getElementById("empzipcode").value = emp.empzipcode;
+            document.getElementById("empstatus").value = emp.empstatus;
+            
+            const submitBtn = document.getElementById("submitBtn");
+            submitBtn.innerText = "Update Record";
+            submitBtn.style.backgroundColor = "#3498db";
+        }
+
+        // --- 4. CREATE / UPDATE PIPELINE ---
+        document.getElementById("empForm").addEventListener("submit", function(e) {
+            e.preventDefault();
+            
+            const code = document.getElementById("empcode").value;
+            const payload = {
+                empcode: code,
+                empname: document.getElementById("empname").value,
+                empaddress: document.getElementById("empaddress").value,
+                empzipcode: document.getElementById("empzipcode").value,
+                empstatus: document.getElementById("empstatus").value
+            };
+
+            const targetUrl = isEditMode ? `${API_URL}/${code}` : API_URL;
+            const httpMethod = isEditMode ? "PUT" : "POST";
+
+            fetch(targetUrl, {
+                method: httpMethod,
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            })
+            .then(res => {
+                if (!res.ok) throw new Error("Transaction rejected.");
+                return res.json();
+            })
+            .then(() => {
+                resetFormState();
+                loadEmployees();
+            })
+            .catch(err => alert("Operation failed: " + err.message));
+        });
+
+        // --- 5. DELETE OPERATION ---
+        function deleteEmployee(code) {
+            if (confirm(`Are you sure you want to remove employee code ${code}?`)) {
+                fetch(`${API_URL}/${code}`, { method: "DELETE" })
+                    .then(() => {
+                        if (document.getElementById("empcode").value === code.toString()) resetFormState();
+                        loadEmployees();
+                    })
+                    .catch(err => alert("Error clearing record."));
+            }
+        }
+
+        // Reset inputs back to default configuration
+        function resetFormState() {
+            isEditMode = false;
+            document.getElementById("empForm").reset();
+            document.getElementById("empcode").disabled = false;
+            
+            const submitBtn = document.getElementById("submitBtn");
+            submitBtn.innerText = "Save Record";
+            submitBtn.style.backgroundColor = "#2ecc71";
+        }
+
+        // Initialize execution sequence immediately
+        loadEmployees();
+    </script>
+</body>
+</html>
