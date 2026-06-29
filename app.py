@@ -1,15 +1,15 @@
+import os
 import logging
 import re
-import urllib.parse
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, field_validator
 from sqlalchemy import Column, String, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
+from fastapi.responses import HTMLResponse
 
-# --- 1. FIXED LOGGING SYSTEM (BOUND TO UVICORN STREAM) ---
-# This grabs FastAPI's active running logger so no actions are muted
+# --- 1. FIXED LOGGING SYSTEM ---
 logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI()
@@ -22,25 +22,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 2. SQLALCHEMY ENGINE SETUP ---
-raw_conn_string = (
-    "Driver={ODBC Driver 17 for SQL Server};"
-    "Server=(LocalDb)\\MSSQLLocalDB;"
-    "Database=db_employee;"
-    "Trusted_Connection=yes;"  
-    "TrustServerCertificate=yes;"
-)
-params = urllib.parse.quote_plus(raw_conn_string)
-DATABASE_URL = f"mssql+pyodbc:///?odbc_connect={params}"
+# --- 2. MULTI-ENVIRONMENT SQLALCHEMY ENGINE SETUP ---
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-engine = create_engine(DATABASE_URL)
+if not DATABASE_URL:
+    logger.info("No cloud database string detected. Spawning free in-memory SQLite engine...")
+    DATABASE_URL = "sqlite:///file:mem_employee?mode=memory&cache=shared"
+    engine = create_engine(DATABASE_URL,connect_args={"check_same_thread": False})
+else:
+    logger.info("Connecting to external cloud database engine...")
+    engine = create_engine(DATABASE_URL)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- 3. DATABASE TABLE MODEL ---
+# --- 3. DATABASE TABLE MODEL (CLEAN & UNIQUE) ---
 class EmployeeTable(Base):
     __tablename__ = "tbl_employee"
-    __table_args__ = {'schema': 'dbo'}
+    
+    # Safely injects the 'dbo' schema ONLY if you are explicitly targeted on a Microsoft SQL DB
+    __table_args__ = {'schema': 'dbo'} if DATABASE_URL and DATABASE_URL.startswith("mssql") else None
 
     empcode = Column(String(50), primary_key=True, nullable=False)
     empname = Column(String(150), nullable=False)
@@ -48,14 +49,13 @@ class EmployeeTable(Base):
     empzipcode = Column(String(20), nullable=True)
     empstatus = Column(String(20), nullable=False, default="ACTIVE")
 
-# Programmatically build table layouts
+# Programmatically build table layouts cleanly
 Base.metadata.create_all(bind=engine)
 
 # --- 4. AUTOMATED DATABASE SEED ENGINE ---
 def seed_database():
     db = SessionLocal()
     try:
-        # Check if any employee entries exist inside the table grid
         count = db.query(EmployeeTable).count()
         if count == 0:
             logger.info("Initializing Seed Sequence: 'tbl_employee' is empty. Injecting sample records...")
@@ -76,9 +76,7 @@ def seed_database():
     finally:
         db.close()
 
-# Fire seed verification query immediately upon application startup context
 seed_database()
-
 
 # --- 5. INPUT SANITIZATION VALIDATOR (PYDANTIC) ---
 class EmployeeSchema(BaseModel):
@@ -92,20 +90,26 @@ class EmployeeSchema(BaseModel):
     @classmethod
     def sanitize_inputs(cls, value: str) -> str:
         clean_value = value.strip()
-        clean_value = re.sub(r"<[^>]*>", "", clean_value) # Block Cross-Site Scripting (XSS)
+        clean_value = re.sub(r"<[^>]*>", "", clean_value)
         if not clean_value:
             raise ValueError("Fields cannot consist of blank spaces.")
         return clean_value
 
-
 # --- 6. USER INTERFACE STATIC ROUTER ---
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 def read_index():
-    return FileResponse("app.html")
+    with open("app.html", "r", encoding="utf-8") as file:
+        html_content = file.read()
+    # We return it with strict 'No-Cache' headers to force your mobile and desktop browsers 
+    # to completely throw away old cached structures and download the fresh JS code block immediately.
+    headers = {
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0"
+    }
+    return HTMLResponse(content=html_content, status_code=200, headers=headers)
 
-
-# --- 7. DATABASE OPERATIONS (WITH ACTIVE CONSOLE LOGGING) ---
-
+# --- 7. DATABASE OPERATIONS ---
 @app.get("/employees")
 def get_all_employees():
     logger.info("HTTP GET Request: Fetching all active employee profile records.")
@@ -123,7 +127,7 @@ def create_employee(employee: EmployeeSchema):
     try:
         existing = db.query(EmployeeTable).filter(EmployeeTable.empcode == employee.empcode).first()
         if existing:
-            logger.warning(f"Conflict Blocked: Employee code {employee.empcode} already exists inside SQL Server.")
+            logger.warning(f"Conflict Blocked: Employee code {employee.empcode} already exists.")
             raise HTTPException(status_code=400, detail="Employee code already exists")
         
         new_emp = EmployeeTable(
