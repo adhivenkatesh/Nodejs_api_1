@@ -12,21 +12,39 @@
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px; }
         input, select { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-        button { background-color: #2ecc71; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
-        button:hover { background-color: #27ae60; }
+        
+        /* Interactive Buttons */
+        .btn-submit { background-color: #2ecc71; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; margin-bottom: 10px; }
+        .btn-submit:hover { background-color: #27ae60; }
+        .btn-cancel { background-color: #95a5a6; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; display: none; }
+        .btn-cancel:hover { background-color: #7f8c8d; }
+        .btn-delete { background-color: #e74c3c; padding: 6px 12px; font-size: 12px; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-delete:hover { background-color: #c0392b; }
         
         .search-wrapper { margin-bottom: 15px; }
         #searchBar { padding: 10px; border: 2px solid #34495e; border-radius: 4px; font-size: 14px; width: 100%; box-sizing: border-box; }
 
-        .table-scroll-container { max-height: 450px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; }
+        /* Scrollable List Container */
+        .employee-list-container {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
         table { width: 100%; border-collapse: collapse; background: white; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; font-size: 14px; }
-        th { background-color: #34495e; color: white; position: sticky; top: 0; z-index: 1; }
-        tr:hover { background-color: #f1f2f6; }
-        .btn-delete { background-color: #e74c3c; padding: 5px 10px; width: auto; font-size: 12px; display: inline-block; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        .btn-delete:hover { background-color: #c0392b; }
-        .btn-edit { background-color: #3498db; width: auto; font-size: 12px; padding: 5px 10px; margin-right: 5px; display: inline-block; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        .btn-edit:hover { background-color: #2980b9; }
+        
+        /* Sticky Header for Smooth Scrolling */
+        th { background-color: #34495e; color: white; position: sticky; top: 0; z-index: 10; }
+        
+        .employee-row { cursor: pointer; transition: background-color 0.2s; }
+        .employee-row:hover { background-color: #f1f2f6; }
+        
+        /* Status Badges */
+        .status-badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; display: inline-block; }
+        .status-badge.active { background-color: #e8f5e9; color: #2e7d32; }
+        .status-badge.inactive { background-color: #ffebee; color: #c62828; }
     </style>
 </head>
 <body>
@@ -36,7 +54,7 @@
     <div class="container">
         <!-- FORM INTERFACE -->
         <div class="card">
-            <h2>Add Employee</h2>
+            <h2 id="formTitle">Add Employee</h2>
             <form id="empForm">
                 <div class="form-group"><label>Emp Code</label><input type="text" id="empcode" required></div>
                 <div class="form-group"><label>Name</label><input type="text" id="empname" required></div>
@@ -49,7 +67,8 @@
                         <option value="INACTIVE">INACTIVE</option>
                     </select>
                 </div>
-                <button type="submit" id="submitBtn">Save Record</button>
+                <button type="submit" id="submitBtn" class="btn-submit">Save Record</button>
+                <button type="button" id="cancelBtn" class="btn-cancel" onclick="resetForm()">Cancel Edit</button>
             </form>
         </div>
 
@@ -59,7 +78,7 @@
             <div class="search-wrapper">
                 <input type="text" id="searchBar" placeholder="🔍 Type to search employees...">
             </div>
-            <div class="table-scroll-container">
+            <div class="employee-list-container">
                 <table>
                     <thead>
                         <tr>
@@ -79,127 +98,163 @@
 
     <script>
         const API_URL = "/employees";
+        let allEmployees = []; // Global memory array for offline searching filtering
         let isEditMode = false;
 
-        // --- 1. LOAD EMPLOYEES (ASYNC LAYOUT) ---
+        // --- 1. RUN APP INITTIALIZATION ---
+        document.addEventListener("DOMContentLoaded", () => {
+            loadEmployees();
+            setupSearch();
+            setupFormSubmit();
+        });
+
+        // --- 2. LOAD ALL EMPLOYEES FROM API ---
         async function loadEmployees() {
             try {
                 const response = await fetch(API_URL);
-                const data = await response.json();
-                const tbody = document.getElementById("employeeTableBody");
-                tbody.innerHTML = "";
-                
-                if (!data || data.length === 0) {
-                    tbody.innerHTML = "<tr><td colspan='6' style='text-align:center;'>Empty database.</td></tr>";
-                    return;
-                }
-                
-                data.forEach(emp => {
-                    const code = emp.empcode || emp.EmpCode || "";
-                    const name = emp.empname || emp.EmpName || "";
-                    const address = emp.empaddress || emp.EmpAddress || "";
-                    const zip = emp.empzipcode || emp.EmpZipCode || "";
-                    const status = emp.empstatus || emp.EmpStatus || "ACTIVE";
-
-                    const tr = document.createElement("tr");
-                    tr.className = "employee-row";
-                    tr.innerHTML = `
-                        <td>${code}</td>
-                        <td><b>${name}</b></td>
-                        <td>${address}</td>
-                        <td>${zip}</td>
-                        <td>${status}</td>
-                        <td>
-                            <button class="btn-edit" onclick="populateFormForEdit('${code}','${name}','${address}','${zip}','${status}')">Edit</button>
-                            <button class="btn-delete" onclick="deleteEmployee('${code}')">Delete</button>
-                        </td>
-                    `;
-                    tbody.appendChild(tr);
-                });
+                allEmployees = await response.json();
+                renderTable(allEmployees);
             } catch (err) {
-                console.error("UI Render Failure:", err);
+                console.error("Error loading employee data profiles:", err);
             }
         }
 
-        // --- 2. LIVE SEARCH SYSTEM ---
-        document.getElementById("searchBar").addEventListener("keyup", function() {
-            const keyword = this.value.toLowerCase();
-            document.querySelectorAll(".employee-row").forEach(row => {
-                row.style.display = row.textContent.toLowerCase().includes(keyword) ? "" : "none";
-            });
-        });
-
-        // --- 3. POPULATE FOR EDIT ---
-        function populateFormForEdit(code, name, address, zip, status) {
-            isEditMode = true;
-            document.getElementById("empcode").value = code;
-            document.getElementById("empcode").disabled = true;
-            document.getElementById("empname").value = name;
-            document.getElementById("empaddress").value = address;
-            document.getElementById("empzipcode").value = zip;
-            document.getElementById("empstatus").value = status;
+        // --- 3. RENDER TABLE WITH BINDINGS ---
+        function renderTable(employees) {
+            const tbody = document.getElementById("employeeTableBody");
+            tbody.innerHTML = "";
             
-            const btn = document.getElementById("submitBtn");
-            btn.innerText = "Update Record";
-            btn.style.backgroundColor = "#3498db";
+            if (!employees || employees.length === 0) {
+                tbody.innerHTML = "<tr><td colspan='6' style='text-align:center; padding: 20px; color: #888;'>No records found.</td></tr>";
+                return;
+            }
+            
+            employees.forEach(emp => {
+                const tr = document.createElement("tr");
+                tr.className = "employee-row";
+                tr.title = "Click row to edit details";
+                
+                tr.innerHTML = `
+                    <td>${emp.empcode}</td>
+                    <td><b>${emp.empname}</b></td>
+                    <td>${emp.empaddress}</td>
+                    <td>${emp.empzipcode}</td>
+                    <td><span class="status-badge ${emp.empstatus.toLowerCase()}">${emp.empstatus}</span></td>
+                    <td>
+                        <button class="btn-delete" onclick="event.stopPropagation(); deleteEmployee('${emp.empcode}')">Delete</button>
+                    </td>
+                `;
+
+                // ACTIVE MOUSE CLICK EVENT FOR QUICK BINDING RETRIEVAL
+                tr.addEventListener("click", () => {
+                    isEditMode = true;
+                    document.getElementById("formTitle").innerText = "Edit Employee";
+                    document.getElementById("submitBtn").innerText = "Update Record";
+                    document.getElementById("submitBtn").style.backgroundColor = "#3498db";
+                    document.getElementById("cancelBtn").style.display = "block";
+                    
+                    // Match HTML document fields precisely
+                    document.getElementById("empcode").value = emp.empcode;
+                    document.getElementById("empcode").disabled = true; // Block code mutations during active state changes
+                    document.getElementById("empname").value = emp.empname;
+                    document.getElementById("empaddress").value = emp.empaddress;
+                    document.getElementById("empzipcode").value = emp.empzipcode;
+                    document.getElementById("empstatus").value = emp.empstatus;
+                });
+
+                tbody.appendChild(tr);
+            });
         }
 
-        // --- 4. FORM RESET ---
+        // --- 4. FORM SUBMISSION WORKFLOW (CREATE / UPDATE) ---
+        function setupFormSubmit() {
+            document.getElementById("empForm").addEventListener("submit", async (e) => {
+                e.preventDefault();
+                
+                const empCode = document.getElementById("empcode").value;
+                const employeePayload = {
+                    empcode: empCode,
+                    empname: document.getElementById("empname").value,
+                    empaddress: document.getElementById("empaddress").value,
+                    empzipcode: document.getElementById("empzipcode").value,
+                    empstatus: document.getElementById("empstatus").value
+                };
+
+                const targetUrl = isEditMode ? `${API_URL}/${empCode}` : API_URL;
+                const targetMethod = isEditMode ? "PUT" : "POST";
+
+                try {
+                    const response = await fetch(targetUrl, {
+                        method: targetMethod,
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(employeePayload)
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.detail || "Transaction failed.");
+                    }
+
+                    resetForm();
+                    loadEmployees();
+                } catch (err) {
+                    alert(`⚠️ Operation Error: ${err.message}`);
+                }
+            });
+        }
+
+         // --- 5. PURGE TRANSACTIONS (DELETE) ---
+        async function deleteEmployee(empCode) {
+            if (!confirm(`Are you sure you want to completely remove employee record: ${empCode}?`)) return;
+            
+            try {
+                const response = await fetch(`${API_URL}/${empCode}`, { 
+                    method: "DELETE" 
+                });
+                
+                if (!response.ok) {
+                    throw new Error("Could not complete profile purge operation.");
+                }
+                
+                // If we are currently editing the employee that just got deleted, reset the entry panel
+                if (document.getElementById("empcode").value === empCode) {
+                    resetForm();
+                }
+                
+                // Refresh the table views instantly
+                loadEmployees();
+            } catch (err) {
+                alert(`⚠️ Error: ${err.message}`);
+            }
+        }
+
+        // --- 6. FORM RESET ROUTINE ---
         function resetForm() {
             isEditMode = false;
             document.getElementById("empForm").reset();
+            document.getElementById("formTitle").innerText = "Add Employee";
+            document.getElementById("submitBtn").innerText = "Save Record";
+            document.getElementById("submitBtn").style.backgroundColor = "#2ecc71";
             document.getElementById("empcode").disabled = false;
-            const btn = document.getElementById("submitBtn");
-            btn.innerText = "Save Record";
-            btn.style.backgroundColor = "#2ecc71";
+            document.getElementById("cancelBtn").style.display = "none";
         }
 
-        // --- 5. SAVE / UPDATE PIPELINE ---
-        document.getElementById("empForm").addEventListener("submit", async function(e) {
-            e.preventDefault();
-            const code = document.getElementById("empcode").value;
-            const payload = {
-                empcode: code,
-                empname: document.getElementById("empname").value,
-                empaddress: document.getElementById("empaddress").value,
-                empzipcode: document.getElementById("empzipcode").value,
-                empstatus: document.getElementById("empstatus").value
-            };
-
-            const url = isEditMode ? `${API_URL}/${code}` : API_URL;
-            const method = isEditMode ? "PUT" : "POST";
-
-            try {
-                const res = await fetch(url, {
-                    method: method,
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                });
-                const data = await res.json();
-                alert(data.message || "Done!");
-                resetForm();
-                loadEmployees();
-            } catch (err) {
-                alert("Transaction failed: " + err.message);
-            }
-        });
-
-        // --- 6. DELETE TRANSACTION ENGINE ---
-        async function deleteEmployee(empCode) {
-            if (confirm(`Remove employee ${empCode}?`)) {
-                try {
-                    const res = await fetch(`${API_URL}/${empCode}`, { method: "DELETE" });
-                    const data = await res.json();
-                    alert(data.message || "Deleted!");
-                    loadEmployees();
-                } catch (err) {
-                    console.error(err);
-                }
-            }
+        // --- 7. REAL-TIME SEARCH BAR ALGORITHM ---
+        function setupSearch() {
+            document.getElementById("searchBar").addEventListener("input", (e) => {
+                const query = e.target.value.toLowerCase().trim();
+                
+                const filtered = allEmployees.filter(emp => 
+                    (emp.empcode && emp.empcode.toLowerCase().includes(query)) || 
+                    (emp.empname && emp.empname.toLowerCase().includes(query)) || 
+                    (emp.empaddress && emp.empaddress.toLowerCase().includes(query)) || 
+                    (emp.empzipcode && emp.empzipcode.toLowerCase().includes(query)) ||
+                    (emp.empstatus && emp.empstatus.toLowerCase().includes(query))
+                );
+                
+                renderTable(filtered);
+            });
         }
-
-        // --- 7. RUN WEB APPLICATION ON PAGE LOAD ---
-        loadEmployees();
-    </script>
+            </script>
 </body>
 </html>
