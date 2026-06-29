@@ -16,22 +16,16 @@
         button:hover { background-color: #27ae60; }
         
         .search-wrapper { margin-bottom: 15px; }
-        #searchBar { padding: 10px; border: 2px solid #34495e; border-radius: 4px; font-size: 14px; }
+        #searchBar { padding: 10px; border: 2px solid #34495e; border-radius: 4px; font-size: 14px; width: 100%; box-sizing: border-box; }
 
-        /* SCROLLABLE TABLE WINDOW CONTAINMENT */
-        .table-scroll-container {
-            max-height: 450px; 
-            overflow-y: auto;   
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
+        .table-scroll-container { max-height: 450px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; }
         table { width: 100%; border-collapse: collapse; background: white; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; font-size: 14px; }
         th { background-color: #34495e; color: white; position: sticky; top: 0; z-index: 1; }
         tr:hover { background-color: #f1f2f6; }
-        .btn-delete { background-color: #e74c3c; padding: 5px 10px; width: auto; font-size: 12px; display: inline-block; }
+        .btn-delete { background-color: #e74c3c; padding: 5px 10px; width: auto; font-size: 12px; display: inline-block; color: white; border: none; border-radius: 4px; cursor: pointer; }
         .btn-delete:hover { background-color: #c0392b; }
-        .btn-edit { background-color: #3498db; width: auto; font-size: 12px; padding: 5px 10px; margin-right: 5px; display: inline-block; }
+        .btn-edit { background-color: #3498db; width: auto; font-size: 12px; padding: 5px 10px; margin-right: 5px; display: inline-block; color: white; border: none; border-radius: 4px; cursor: pointer; }
         .btn-edit:hover { background-color: #2980b9; }
     </style>
 </head>
@@ -40,7 +34,7 @@
     <h1 style="text-align: center; color: #2c3e50; margin-bottom: 30px;">Employee Database Directory</h1>
 
     <div class="container">
-        <!-- FORM INTERFACE CARD -->
+        <!-- FORM INTERFACE -->
         <div class="card">
             <h2>Add Employee</h2>
             <form id="empForm">
@@ -59,14 +53,12 @@
             </form>
         </div>
 
-        <!-- SCROLLABLE LIST TABLE CARD -->
+        <!-- LIST TABLE VIEW -->
         <div class="card">
             <h2>Employee List</h2>
-            
             <div class="search-wrapper">
-                <input type="text" id="searchBar" placeholder="🔍 Type to search employees by name, code, or status...">
+                <input type="text" id="searchBar" placeholder="🔍 Type to search employees...">
             </div>
-
             <div class="table-scroll-container">
                 <table>
                     <thead>
@@ -79,88 +71,92 @@
                             <th>Action</th>
                         </tr>
                     </thead>
-                    <tbody id="employeeTableBody">
-                        <!-- Populated by JavaScript -->
-                    </tbody>
+                    <tbody id="employeeTableBody"></tbody>
                 </table>
             </div>
         </div>
     </div>
 
     <script>
-        const API_URL = "http://localhost:7000/employees";
-
-        //const API_URL = "/employees";
+        const API_URL = "/employees";
         let isEditMode = false;
 
-        // --- 1. READ: Fetch Data Rows ---
-        function loadEmployees() {
-            fetch(API_URL)
-                .then(res => res.json())
-                .then(data => {
-                    const tbody = document.getElementById("employeeTableBody");
-                    tbody.innerHTML = "";
-                    
-                    data.forEach(emp => {
-                        const tr = document.createElement("tr");
-                        tr.className = "employee-row";
-                        tr.innerHTML = `
-                            <td>${emp.empcode}</td>
-                            <td><b>${emp.empname}</b></td>
-                            <td>${emp.empaddress}</td>
-                            <td>${emp.empzipcode}</td>
-                            <td>${emp.empstatus}</td>
-                            <td>
-                                <button class="btn-edit">Edit</button>
-                                <button class="btn-delete">Delete</button>
-                            </td>
-                        `;
-                        
-                        // Attach data objects safely to the elements to avoid quote breaking bugs
-                        tr.querySelector(".btn-edit").addEventListener("click", () => populateFormForEdit(emp));
-                        tr.querySelector(".btn-delete").addEventListener("click", () => deleteEmployee(emp.empcode));
-                        
-                        tbody.appendChild(tr);
-                    });
-                })
-                .catch(err => console.error("Error reading data:", err));
+        // --- 1. LOAD EMPLOYEES (ASYNC LAYOUT) ---
+        async function loadEmployees() {
+            try {
+                const response = await fetch(API_URL);
+                const data = await response.json();
+                const tbody = document.getElementById("employeeTableBody");
+                tbody.innerHTML = "";
+                
+                if (!data || data.length === 0) {
+                    tbody.innerHTML = "<tr><td colspan='6' style='text-align:center;'>Empty database.</td></tr>";
+                    return;
+                }
+                
+                data.forEach(emp => {
+                    const code = emp.empcode || emp.EmpCode || "";
+                    const name = emp.empname || emp.EmpName || "";
+                    const address = emp.empaddress || emp.EmpAddress || "";
+                    const zip = emp.empzipcode || emp.EmpZipCode || "";
+                    const status = emp.empstatus || emp.EmpStatus || "ACTIVE";
+
+                    const tr = document.createElement("tr");
+                    tr.className = "employee-row";
+                    tr.innerHTML = `
+                        <td>${code}</td>
+                        <td><b>${name}</b></td>
+                        <td>${address}</td>
+                        <td>${zip}</td>
+                        <td>${status}</td>
+                        <td>
+                            <button class="btn-edit" onclick="populateFormForEdit('${code}','${name}','${address}','${zip}','${status}')">Edit</button>
+                            <button class="btn-delete" onclick="deleteEmployee('${code}')">Delete</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (err) {
+                console.error("UI Render Failure:", err);
+            }
         }
 
-        // --- 2. LIVE SEARCH FILTER SYSTEM ---
+        // --- 2. LIVE SEARCH SYSTEM ---
         document.getElementById("searchBar").addEventListener("keyup", function() {
             const keyword = this.value.toLowerCase();
-            const rows = document.querySelectorAll(".employee-row");
-            
-            rows.forEach(row => {
-                const textContent = row.textContent.toLowerCase();
-                if (textContent.includes(keyword)) {
-                    row.style.display = ""; // Shows matching row
-                } else {
-                    row.style.display = "none"; // Hides non-matching row
-                }
+            document.querySelectorAll(".employee-row").forEach(row => {
+                row.style.display = row.textContent.toLowerCase().includes(keyword) ? "" : "none";
             });
         });
 
-        // --- 3. POPULATE FORM FOR EDIT ---
-        function populateFormForEdit(emp) {
+        // --- 3. POPULATE FOR EDIT ---
+        function populateFormForEdit(code, name, address, zip, status) {
             isEditMode = true;
-            
-            document.getElementById("empcode").value = emp.empcode;
+            document.getElementById("empcode").value = code;
             document.getElementById("empcode").disabled = true;
-            document.getElementById("empname").value = emp.empname;
-            document.getElementById("empaddress").value = emp.empaddress;
-            document.getElementById("empzipcode").value = emp.empzipcode;
-            document.getElementById("empstatus").value = emp.empstatus;
+            document.getElementById("empname").value = name;
+            document.getElementById("empaddress").value = address;
+            document.getElementById("empzipcode").value = zip;
+            document.getElementById("empstatus").value = status;
             
-            const submitBtn = document.getElementById("submitBtn");
-            submitBtn.innerText = "Update Record";
-            submitBtn.style.backgroundColor = "#3498db";
+            const btn = document.getElementById("submitBtn");
+            btn.innerText = "Update Record";
+            btn.style.backgroundColor = "#3498db";
         }
 
-        // --- 4. CREATE / UPDATE PIPELINE ---
-        document.getElementById("empForm").addEventListener("submit", function(e) {
+        // --- 4. FORM RESET ---
+        function resetForm() {
+            isEditMode = false;
+            document.getElementById("empForm").reset();
+            document.getElementById("empcode").disabled = false;
+            const btn = document.getElementById("submitBtn");
+            btn.innerText = "Save Record";
+            btn.style.backgroundColor = "#2ecc71";
+        }
+
+        // --- 5. SAVE / UPDATE PIPELINE ---
+        document.getElementById("empForm").addEventListener("submit", async function(e) {
             e.preventDefault();
-            
             const code = document.getElementById("empcode").value;
             const payload = {
                 empcode: code,
@@ -170,49 +166,39 @@
                 empstatus: document.getElementById("empstatus").value
             };
 
-            const targetUrl = isEditMode ? `${API_URL}/${code}` : API_URL;
-            const httpMethod = isEditMode ? "PUT" : "POST";
+            const url = isEditMode ? `${API_URL}/${code}` : API_URL;
+            const method = isEditMode ? "PUT" : "POST";
 
-            fetch(targetUrl, {
-                method: httpMethod,
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-            })
-            .then(res => {
-                if (!res.ok) throw new Error("Transaction rejected.");
-                return res.json();
-            })
-            .then(() => {
-                resetFormState();
+            try {
+                const res = await fetch(url, {
+                    method: method,
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                alert(data.message || "Done!");
+                resetForm();
                 loadEmployees();
-            })
-            .catch(err => alert("Operation failed: " + err.message));
+            } catch (err) {
+                alert("Transaction failed: " + err.message);
+            }
         });
 
-        // --- 5. DELETE OPERATION ---
-        function deleteEmployee(code) {
-            if (confirm(`Are you sure you want to remove employee code ${code}?`)) {
-                fetch(`${API_URL}/${code}`, { method: "DELETE" })
-                    .then(() => {
-                        if (document.getElementById("empcode").value === code.toString()) resetFormState();
-                        loadEmployees();
-                    })
-                    .catch(err => alert("Error clearing record."));
+        // --- 6. DELETE TRANSACTION ENGINE ---
+        async function deleteEmployee(empCode) {
+            if (confirm(`Remove employee ${empCode}?`)) {
+                try {
+                    const res = await fetch(`${API_URL}/${empCode}`, { method: "DELETE" });
+                    const data = await res.json();
+                    alert(data.message || "Deleted!");
+                    loadEmployees();
+                } catch (err) {
+                    console.error(err);
+                }
             }
         }
 
-        // Reset inputs back to default configuration
-        function resetFormState() {
-            isEditMode = false;
-            document.getElementById("empForm").reset();
-            document.getElementById("empcode").disabled = false;
-            
-            const submitBtn = document.getElementById("submitBtn");
-            submitBtn.innerText = "Save Record";
-            submitBtn.style.backgroundColor = "#2ecc71";
-        }
-
-        // Initialize execution sequence immediately
+        // --- 7. RUN WEB APPLICATION ON PAGE LOAD ---
         loadEmployees();
     </script>
 </body>
